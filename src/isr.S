@@ -1,4 +1,3 @@
-.section .note.GNU-stack, "", @progbits
 .section .text
 
 .extern isr_handler

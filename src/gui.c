@@ -4,6 +4,7 @@
 #include "timer.h"
 #include "memory.h"
 #include "framebuffer.h"
+#include "io.h"
 #include <stddef.h>
 
 static struct limine_framebuffer *framebuffer;
@@ -230,7 +231,7 @@ static void draw_about_content(struct window *win) {
     gui_draw_text(win->x + 20, win->y + 50, "Oyster OS v0.1", 0x00000000);
     gui_draw_text(win->x + 20, win->y + 75, "A simple operating system", 0x00505050);
     gui_draw_text(win->x + 20, win->y + 100, "written in C.", 0x00505050);
-    gui_draw_text(win->x + 20, win->y + 140, "Move mouse and click!", 0x00008000);
+    gui_draw_text(win->x + 20, win->y + 140, "Use arrow keys + Space!", 0x00008000);
 }
 
 static void draw_notepad_content(struct window *win) {
@@ -255,7 +256,14 @@ void gui_run(void) {
     about_win->active = true;
     active_window = about_win;
     
-    struct mouse_state prev_mouse = {0};
+    int32_t cursor_x = screen_width / 2;
+    int32_t cursor_y = screen_height / 2;
+    
+    uint8_t mouse_cycle = 0;
+    int8_t mouse_bytes[3] = {0};
+    bool mouse_left = false;
+    bool prev_mouse_left = false;
+    bool extended = false;
     
     while (1) {
         gui_draw_desktop();
@@ -266,24 +274,92 @@ void gui_run(void) {
         
         gui_draw_taskbar();
         
-        struct mouse_state mouse = mouse_get_state();
+        /* Poll keyboard and mouse directly */
+        for (int polls = 0; polls < 20; polls++) {
+            uint8_t status = inb(0x64);
+            if (!(status & 1)) break;
+            
+            uint8_t data = inb(0x60);
+            
+            if (status & 0x20) {
+                /* Mouse data */
+                switch (mouse_cycle) {
+                    case 0:
+                        if (data & 0x08) {
+                            mouse_bytes[0] = data;
+                            mouse_cycle = 1;
+                        }
+                        break;
+                    case 1:
+                        mouse_bytes[1] = data;
+                        mouse_cycle = 2;
+                        break;
+                    case 2:
+                        mouse_bytes[2] = data;
+                        mouse_cycle = 0;
+                        
+                        prev_mouse_left = mouse_left;
+                        mouse_left = mouse_bytes[0] & 0x01;
+                        
+                        int32_t dx = mouse_bytes[1];
+                        int32_t dy = mouse_bytes[2];
+                        if (mouse_bytes[0] & 0x10) dx |= (int32_t)0xFFFFFF00;
+                        if (mouse_bytes[0] & 0x20) dy |= (int32_t)0xFFFFFF00;
+                        
+                        cursor_x += dx;
+                        cursor_y -= dy;
+                        break;
+                }
+            } else {
+                /* Keyboard data */
+                if (data == 0xE0) {
+                    extended = true;
+                } else if (extended) {
+                    extended = false;
+                    switch (data) {
+                        case 0x48: cursor_y -= 6; break;
+                        case 0x50: cursor_y += 6; break;
+                        case 0x4B: cursor_x -= 6; break;
+                        case 0x4D: cursor_x += 6; break;
+                    }
+                } else if (data == 0x39) {
+                    /* Space pressed */
+                    prev_mouse_left = mouse_left;
+                    mouse_left = true;
+                } else if (data == 0xB9) {
+                    /* Space released */
+                    mouse_left = false;
+                } else if (data == 0x1C) {
+                    /* Enter pressed */
+                    prev_mouse_left = mouse_left;
+                    mouse_left = true;
+                } else if (data == 0x9C) {
+                    /* Enter released */
+                    mouse_left = false;
+                }
+            }
+        }
         
-        if (mouse.left_button && !prev_mouse.left_button) {
+        if (cursor_x < 0) cursor_x = 0;
+        if (cursor_y < 0) cursor_y = 0;
+        if (cursor_x >= screen_width) cursor_x = screen_width - 1;
+        if (cursor_y >= screen_height - 1) cursor_y = screen_height - 2;
+        
+        bool click = mouse_left && !prev_mouse_left;
+        prev_mouse_left = mouse_left;
+        
+        if (click) {
             for (int i = window_count - 1; i >= 0; i--) {
                 struct window *win = windows[i];
                 if (!win->visible) continue;
                 
-                if (mouse.x >= win->x && mouse.x < win->x + win->width &&
-                    mouse.y >= win->y && mouse.y < win->y + 30) {
+                if (cursor_x >= win->x && cursor_x < win->x + win->width &&
+                    cursor_y >= win->y && cursor_y < win->y + 30) {
                     
-                    if (mouse.x >= win->x + win->width - 28 && mouse.x < win->x + win->width - 8 &&
-                        mouse.y >= win->y + 5 && mouse.y < win->y + 25) {
+                    if (cursor_x >= win->x + win->width - 28 && cursor_x < win->x + win->width - 8 &&
+                        cursor_y >= win->y + 5 && cursor_y < win->y + 25) {
                         win->visible = false;
                     } else {
-                        win->dragging = true;
-                        win->drag_offset_x = mouse.x - win->x;
-                        win->drag_offset_y = mouse.y - win->y;
-                        
                         if (active_window) active_window->active = false;
                         win->active = true;
                         active_window = win;
@@ -298,24 +374,10 @@ void gui_run(void) {
             }
         }
         
-        if (!mouse.left_button) {
-            for (int i = 0; i < window_count; i++) {
-                windows[i]->dragging = false;
-            }
-        }
+        gui_draw_cursor(cursor_x, cursor_y);
         
-        if (active_window && active_window->dragging && mouse.left_button) {
-            active_window->x = mouse.x - active_window->drag_offset_x;
-            active_window->y = mouse.y - active_window->drag_offset_y;
-            
-            if (active_window->y < 0) active_window->y = 0;
-            if (active_window->y > screen_height - 70) active_window->y = screen_height - 70;
-        }
-        
-        gui_draw_cursor(mouse.x, mouse.y);
+        gui_draw_text(10, screen_height - 60, "Arrow keys: move | Space: click | Mouse: move+click", 0x00888888);
         
         swap_buffers();
-        
-        prev_mouse = mouse;
     }
 }

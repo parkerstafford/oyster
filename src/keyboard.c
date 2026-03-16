@@ -11,6 +11,11 @@ static char key_buffer[256];
 static volatile uint8_t buffer_start = 0;
 static volatile uint8_t buffer_end = 0;
 
+static volatile int arrow_up = 0;
+static volatile int arrow_down = 0;
+static volatile int arrow_left = 0;
+static volatile int arrow_right = 0;
+
 static const char scancode_to_ascii[] = {
     0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
     '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
@@ -29,11 +34,34 @@ static const char scancode_to_ascii_shift[] = {
 
 static bool shift_pressed = false;
 static bool caps_lock = false;
+static bool extended_key = false;
 
 static void keyboard_handler(struct interrupt_frame *frame) {
     (void)frame;
     
     uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+    
+    if (scancode == 0xE0) {
+        extended_key = true;
+        pic_send_eoi(1);
+        return;
+    }
+    
+    if (extended_key) {
+        extended_key = false;
+        switch (scancode) {
+            case 0x48: arrow_up = 1; break;
+            case 0x50: arrow_down = 1; break;
+            case 0x4B: arrow_left = 1; break;
+            case 0x4D: arrow_right = 1; break;
+            case 0xC8: arrow_up = 0; break;
+            case 0xD0: arrow_down = 0; break;
+            case 0xCB: arrow_left = 0; break;
+            case 0xCD: arrow_right = 0; break;
+        }
+        pic_send_eoi(1);
+        return;
+    }
     
     if (scancode == 0x2A || scancode == 0x36) {
         shift_pressed = true;
@@ -80,4 +108,11 @@ char keyboard_getchar(void) {
     char c = key_buffer[buffer_start];
     buffer_start = (buffer_start + 1) % 256;
     return c;
+}
+
+void keyboard_get_arrows(int *up, int *down, int *left, int *right) {
+    *up = arrow_up;
+    *down = arrow_down;
+    *left = arrow_left;
+    *right = arrow_right;
 }
