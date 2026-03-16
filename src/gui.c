@@ -192,6 +192,10 @@ struct window *gui_create_window(int32_t x, int32_t y, int32_t w, int32_t h, con
     win->active = true;
     win->visible = true;
     win->dragging = false;
+    win->accepts_text = false;
+    win->text_len = 0;
+    win->text_cursor = 0;
+    win->text_buffer[0] = '\0';
     win->draw_content = NULL;
     win->on_click = NULL;
     
@@ -235,9 +239,44 @@ static void draw_about_content(struct window *win) {
 }
 
 static void draw_notepad_content(struct window *win) {
-    gui_draw_rect(win->x + 10, win->y + 40, win->width - 20, win->height - 50, 0x00ffffff);
-    gui_draw_rect_outline(win->x + 10, win->y + 40, win->width - 20, win->height - 50, 0x00808080);
-    gui_draw_text(win->x + 15, win->y + 45, "Type here...", 0x00808080);
+    int32_t text_area_x = win->x + 10;
+    int32_t text_area_y = win->y + 40;
+    int32_t text_area_w = win->width - 20;
+    int32_t text_area_h = win->height - 50;
+    
+    gui_draw_rect(text_area_x, text_area_y, text_area_w, text_area_h, 0x00ffffff);
+    gui_draw_rect_outline(text_area_x, text_area_y, text_area_w, text_area_h, 0x00808080);
+    
+    if (win->text_len == 0 && !win->active) {
+        gui_draw_text(text_area_x + 5, text_area_y + 5, "Click and type...", 0x00aaaaaa);
+        return;
+    }
+    
+    int32_t cx = text_area_x + 5;
+    int32_t cy = text_area_y + 5;
+    int max_col = (text_area_w - 10) / 8;
+    int col = 0;
+    
+    for (int i = 0; i < win->text_len; i++) {
+        if (win->text_buffer[i] == '\n' || col >= max_col) {
+            cx = text_area_x + 5;
+            cy += 16;
+            col = 0;
+            if (win->text_buffer[i] == '\n') continue;
+        }
+        
+        if (cy + 16 > text_area_y + text_area_h) break;
+        
+        char str[2] = { win->text_buffer[i], 0 };
+        gui_draw_text(cx, cy, str, 0x00000000);
+        cx += 8;
+        col++;
+    }
+    
+    /* Blinking cursor */
+    if (win->active) {
+        gui_draw_rect(cx, cy, 2, 14, 0x00000000);
+    }
 }
 
 void gui_run(void) {
@@ -252,6 +291,7 @@ void gui_run(void) {
     
     struct window *notepad_win = gui_create_window(450, 150, 350, 250, "Notepad");
     notepad_win->draw_content = draw_notepad_content;
+    notepad_win->accepts_text = true;
     notepad_win->active = false;
     about_win->active = true;
     active_window = about_win;
@@ -264,6 +304,22 @@ void gui_run(void) {
     bool mouse_left = false;
     bool prev_mouse_left = false;
     bool extended = false;
+    bool shift = false;
+    
+    static const char sc_normal[] = {
+        0, 27, '1','2','3','4','5','6','7','8','9','0','-','=','\b',
+        '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',
+        0,'a','s','d','f','g','h','j','k','l',';','\'','`',
+        0,'\\','z','x','c','v','b','n','m',',','.','/',0,
+        '*',0,' ',0
+    };
+    static const char sc_shift[] = {
+        0, 27, '!','@','#','$','%','^','&','*','(',')',  '_','+','\b',
+        '\t','Q','W','E','R','T','Y','U','I','O','P','{','}','\n',
+        0,'A','S','D','F','G','H','J','K','L',':','"','~',
+        0,'|','Z','X','C','V','B','N','M','<','>','?',0,
+        '*',0,' ',0
+    };
     
     while (1) {
         gui_draw_desktop();
@@ -274,69 +330,84 @@ void gui_run(void) {
         
         gui_draw_taskbar();
         
-        /* Poll keyboard and mouse directly */
-        for (int polls = 0; polls < 20; polls++) {
-            uint8_t status = inb(0x64);
-            if (!(status & 1)) break;
+        /* Read keyboard from interrupt-driven buffer (never misses keys) */
+        int up, down, left, right;
+        keyboard_get_arrows(&up, &down, &left, &right);
+        if (up) cursor_y -= 6;
+        if (down) cursor_y += 6;
+        if (left) cursor_x -= 6;
+        if (right) cursor_x += 6;
+        
+        while (keyboard_has_scancode()) {
+            uint8_t data = keyboard_get_scancode();
             
-            uint8_t data = inb(0x60);
+            if (data == 0xE0) { extended = true; continue; }
+            if (extended) { extended = false; continue; }
+            if (data == 0x2A || data == 0x36) { shift = true; continue; }
+            if (data == 0xAA || data == 0xB6) { shift = false; continue; }
             
-            if (status & 0x20) {
-                /* Mouse data */
-                switch (mouse_cycle) {
-                    case 0:
-                        if (data & 0x08) {
-                            mouse_bytes[0] = data;
-                            mouse_cycle = 1;
-                        }
-                        break;
-                    case 1:
-                        mouse_bytes[1] = data;
-                        mouse_cycle = 2;
-                        break;
-                    case 2:
-                        mouse_bytes[2] = data;
-                        mouse_cycle = 0;
-                        
-                        prev_mouse_left = mouse_left;
-                        mouse_left = mouse_bytes[0] & 0x01;
-                        
-                        int32_t dx = mouse_bytes[1];
-                        int32_t dy = mouse_bytes[2];
-                        if (mouse_bytes[0] & 0x10) dx |= (int32_t)0xFFFFFF00;
-                        if (mouse_bytes[0] & 0x20) dy |= (int32_t)0xFFFFFF00;
-                        
-                        cursor_x += dx;
-                        cursor_y -= dy;
-                        break;
-                }
-            } else {
-                /* Keyboard data */
-                if (data == 0xE0) {
-                    extended = true;
-                } else if (extended) {
-                    extended = false;
-                    switch (data) {
-                        case 0x48: cursor_y -= 6; break;
-                        case 0x50: cursor_y += 6; break;
-                        case 0x4B: cursor_x -= 6; break;
-                        case 0x4D: cursor_x += 6; break;
+            if (data >= 0x80) {
+                if (data == 0xB9 || data == 0x9C) mouse_left = false;
+                continue;
+            }
+            
+            struct window *tw = active_window;
+            bool typed = false;
+            
+            if (tw && tw->accepts_text && tw->visible) {
+                if (data == 0x0E) {
+                    if (tw->text_len > 0) {
+                        tw->text_len--;
+                        tw->text_buffer[tw->text_len] = '\0';
                     }
-                } else if (data == 0x39) {
-                    /* Space pressed */
-                    prev_mouse_left = mouse_left;
-                    mouse_left = true;
-                } else if (data == 0xB9) {
-                    /* Space released */
-                    mouse_left = false;
+                    typed = true;
                 } else if (data == 0x1C) {
-                    /* Enter pressed */
-                    prev_mouse_left = mouse_left;
-                    mouse_left = true;
-                } else if (data == 0x9C) {
-                    /* Enter released */
-                    mouse_left = false;
+                    if (tw->text_len < 2046) {
+                        tw->text_buffer[tw->text_len++] = '\n';
+                        tw->text_buffer[tw->text_len] = '\0';
+                    }
+                    typed = true;
+                } else if (data < 59) {
+                    char c = shift ? sc_shift[data] : sc_normal[data];
+                    if (c >= 0x20 && c <= 0x7E && tw->text_len < 2046) {
+                        tw->text_buffer[tw->text_len++] = c;
+                        tw->text_buffer[tw->text_len] = '\0';
+                        typed = true;
+                    }
                 }
+            }
+            
+            if (!typed && (data == 0x39 || data == 0x1C)) {
+                prev_mouse_left = mouse_left;
+                mouse_left = true;
+            }
+        }
+        
+        /* Poll mouse from port directly */
+        for (int polls = 0; polls < 50; polls++) {
+            uint8_t status = inb(0x64);
+            if (!(status & 0x21)) break;
+            if (!(status & 0x20)) { inb(0x60); continue; }
+            
+            uint8_t mdata = inb(0x60);
+            switch (mouse_cycle) {
+                case 0:
+                    if (mdata & 0x08) { mouse_bytes[0] = mdata; mouse_cycle = 1; }
+                    break;
+                case 1:
+                    mouse_bytes[1] = mdata; mouse_cycle = 2;
+                    break;
+                case 2:
+                    mouse_bytes[2] = mdata; mouse_cycle = 0;
+                    prev_mouse_left = mouse_left;
+                    mouse_left = mouse_bytes[0] & 0x01;
+                    int32_t dx = mouse_bytes[1];
+                    int32_t dy = mouse_bytes[2];
+                    if (mouse_bytes[0] & 0x10) dx |= (int32_t)0xFFFFFF00;
+                    if (mouse_bytes[0] & 0x20) dy |= (int32_t)0xFFFFFF00;
+                    cursor_x += dx;
+                    cursor_y -= dy;
+                    break;
             }
         }
         
@@ -354,7 +425,7 @@ void gui_run(void) {
                 if (!win->visible) continue;
                 
                 if (cursor_x >= win->x && cursor_x < win->x + win->width &&
-                    cursor_y >= win->y && cursor_y < win->y + 30) {
+                    cursor_y >= win->y && cursor_y < win->y + win->height) {
                     
                     if (cursor_x >= win->x + win->width - 28 && cursor_x < win->x + win->width - 8 &&
                         cursor_y >= win->y + 5 && cursor_y < win->y + 25) {

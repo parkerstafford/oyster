@@ -24,7 +24,11 @@ struct window {
     bool active;
     bool visible;
     bool dragging;
+    bool accepts_text;
     int32_t drag_offset_x, drag_offset_y;
+    char text_buffer[2048];
+    int text_len;
+    int text_cursor;
     void (*draw_content)(struct window *win);
     void (*on_click)(struct window *win, int32_t x, int32_t y);
 };

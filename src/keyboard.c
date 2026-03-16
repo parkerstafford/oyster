@@ -11,6 +11,10 @@ static char key_buffer[256];
 static volatile uint8_t buffer_start = 0;
 static volatile uint8_t buffer_end = 0;
 
+static uint8_t scancode_buffer[512];
+static volatile uint16_t sc_buf_start = 0;
+static volatile uint16_t sc_buf_end = 0;
+
 static volatile int arrow_up = 0;
 static volatile int arrow_down = 0;
 static volatile int arrow_left = 0;
@@ -40,6 +44,12 @@ static void keyboard_handler(struct interrupt_frame *frame) {
     (void)frame;
     
     uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+    
+    uint16_t next_sc = (sc_buf_end + 1) % 512;
+    if (next_sc != sc_buf_start) {
+        scancode_buffer[sc_buf_end] = scancode;
+        sc_buf_end = next_sc;
+    }
     
     if (scancode == 0xE0) {
         extended_key = true;
@@ -115,4 +125,15 @@ void keyboard_get_arrows(int *up, int *down, int *left, int *right) {
     *down = arrow_down;
     *left = arrow_left;
     *right = arrow_right;
+}
+
+bool keyboard_has_scancode(void) {
+    return sc_buf_start != sc_buf_end;
+}
+
+uint8_t keyboard_get_scancode(void) {
+    if (sc_buf_start == sc_buf_end) return 0;
+    uint8_t sc = scancode_buffer[sc_buf_start];
+    sc_buf_start = (sc_buf_start + 1) % 512;
+    return sc;
 }
