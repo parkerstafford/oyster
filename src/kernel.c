@@ -3,6 +3,12 @@
 #include <stdbool.h>
 #include "limine.h"
 #include "framebuffer.h"
+#include "gdt.h"
+#include "idt.h"
+#include "pic.h"
+#include "timer.h"
+#include "keyboard.h"
+#include "shell.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -32,21 +38,56 @@ void kmain(void) {
     fb_puts("=====================================\n\n");
     
     fb_set_color(0x00c5c8c6);
-    fb_puts("Kernel loaded successfully.\n");
-    fb_puts("Framebuffer initialized.\n\n");
+    fb_puts("Initializing kernel...\n");
     
+    fb_puts("  [");
+    fb_set_color(0x00b5bd68);
+    fb_puts("OK");
+    fb_set_color(0x00c5c8c6);
+    fb_puts("] GDT\n");
+    gdt_init();
+    
+    fb_puts("  [");
+    fb_set_color(0x00b5bd68);
+    fb_puts("OK");
+    fb_set_color(0x00c5c8c6);
+    fb_puts("] IDT\n");
+    idt_init();
+    
+    fb_puts("  [");
+    fb_set_color(0x00b5bd68);
+    fb_puts("OK");
+    fb_set_color(0x00c5c8c6);
+    fb_puts("] PIC\n");
+    pic_init();
+    
+    fb_puts("  [");
+    fb_set_color(0x00b5bd68);
+    fb_puts("OK");
+    fb_set_color(0x00c5c8c6);
+    fb_puts("] Timer (100 Hz)\n");
+    timer_init(100);
+    
+    fb_puts("  [");
+    fb_set_color(0x00b5bd68);
+    fb_puts("OK");
+    fb_set_color(0x00c5c8c6);
+    fb_puts("] Keyboard\n");
+    keyboard_init();
+    
+    __asm__ volatile ("sti");
+    
+    fb_puts("\n");
     fb_set_color(0x0081a2be);
     fb_puts("System Information:\n");
     fb_set_color(0x00c5c8c6);
     fb_puts("  Architecture: x86_64\n");
     fb_puts("  Bootloader: Limine\n");
-    
     fb_printf("  Resolution: %dx%d\n", fb->width, fb->height);
     fb_printf("  Bits per pixel: %d\n", fb->bpp);
     
-    fb_puts("\n");
-    fb_set_color(0x00b5bd68);
-    fb_puts("Oyster OS is ready.\n");
+    shell_init();
+    shell_run();
     
     hcf();
 }

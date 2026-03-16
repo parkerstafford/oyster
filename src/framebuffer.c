@@ -177,6 +177,13 @@ void fb_putchar(char c) {
         return;
     }
     
+    if (c == '\b') {
+        if (cursor_x >= FONT_WIDTH) {
+            cursor_x -= FONT_WIDTH;
+        }
+        return;
+    }
+    
     if ((uint64_t)(cursor_x + FONT_WIDTH) > fb->width) {
         cursor_x = 0;
         cursor_y += FONT_HEIGHT;

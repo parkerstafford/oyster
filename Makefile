@@ -1,11 +1,14 @@
 # Oyster OS - C Kernel Makefile
 
 CC = gcc
+AS = gcc
 LD = ld
 
 CFLAGS = -Wall -Wextra -std=gnu11 -ffreestanding -fno-stack-protector \
          -fno-stack-check -fno-lto -fPIE -m64 -march=x86-64 \
          -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone
+
+ASFLAGS = -c -m64
 
 LDFLAGS = -nostdlib -static -pie --no-dynamic-linker -z text \
           -z max-page-size=0x1000 -T linker.ld
@@ -14,8 +17,11 @@ SRCDIR = src
 OBJDIR = obj
 ISODIR = iso_root
 
-SOURCES = $(wildcard $(SRCDIR)/*.c)
-OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
+C_SOURCES = $(wildcard $(SRCDIR)/*.c)
+S_SOURCES = $(wildcard $(SRCDIR)/*.S)
+C_OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(C_SOURCES))
+S_OBJECTS = $(patsubst $(SRCDIR)/%.S,$(OBJDIR)/%.o,$(S_SOURCES))
+OBJECTS = $(C_OBJECTS) $(S_OBJECTS)
 
 .PHONY: all clean run iso limine
 
@@ -23,6 +29,9 @@ all: oyster.iso
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.S | $(OBJDIR)
+	$(AS) $(ASFLAGS) $< -o $@
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
