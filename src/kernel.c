@@ -34,6 +34,24 @@ void kmain(void) {
     fb_init(fb);
     fb_clear(0x001a1a2e);
     
+    fb_set_color(0x00c5c8c6);
+    fb_puts("\n");
+    fb_set_color(0x00b5bd68);
+    fb_puts("              _,.---.._\n");
+    fb_puts("          ,-'          `-._\n");
+    fb_puts("        ,'     _,.---._    `.\n");
+    fb_puts("       /     ,'        `.    \\\n");
+    fb_puts("      /    ,'   ____    `.    \\\n");
+    fb_puts("     |    /   ,'    `.   \\    |\n");
+    fb_puts("     |   |   / OYSTER \\   |   |\n");
+    fb_puts("     |   |  |    OS    |  |   |\n");
+    fb_puts("      \\   \\  \\        /  /   /\n");
+    fb_puts("       \\   `. `.____.' ,/   /\n");
+    fb_puts("        `.   `-.____.-'   ,'\n");
+    fb_puts("          `-._        _,-'\n");
+    fb_puts("              `------'\n");
+    fb_puts("\n");
+    
     fb_set_color(0x00f0c674);
     fb_puts("=====================================\n");
     fb_puts("       Welcome to Oyster OS!\n");

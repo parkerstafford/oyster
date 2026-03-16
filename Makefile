@@ -74,7 +74,7 @@ oyster.iso: kernel.elf limine limine.cfg
 		$(ISODIR) -o oyster.iso
 
 run: oyster.iso
-	qemu-system-x86_64 -cdrom oyster.iso -m 256M
+	qemu-system-x86_64 -cdrom oyster.iso -m 256M -enable-kvm 2>/dev/null || qemu-system-x86_64 -cdrom oyster.iso -m 256M
 
 run-uefi: oyster.iso
 	qemu-system-x86_64 -cdrom oyster.iso -m 256M -bios /usr/share/ovmf/OVMF.fd
