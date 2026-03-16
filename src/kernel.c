@@ -8,7 +8,9 @@
 #include "pic.h"
 #include "timer.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "shell.h"
+#include "gui.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -75,6 +77,13 @@ void kmain(void) {
     fb_puts("] Keyboard\n");
     keyboard_init();
     
+    fb_puts("  [");
+    fb_set_color(0x00b5bd68);
+    fb_puts("OK");
+    fb_set_color(0x00c5c8c6);
+    fb_puts("] Mouse\n");
+    mouse_init();
+    
     __asm__ volatile ("sti");
     
     fb_puts("\n");
@@ -86,8 +95,14 @@ void kmain(void) {
     fb_printf("  Resolution: %dx%d\n", fb->width, fb->height);
     fb_printf("  Bits per pixel: %d\n", fb->bpp);
     
-    shell_init();
-    shell_run();
+    fb_puts("\n");
+    fb_set_color(0x00b5bd68);
+    fb_puts("Starting GUI...\n");
+    
+    timer_sleep(1000);
+    
+    gui_init(fb);
+    gui_run();
     
     hcf();
 }
